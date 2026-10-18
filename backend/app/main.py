@@ -1,5 +1,7 @@
 import sys
 import re
+import json
+import urllib.request
 from datetime import datetime
 from typing import Dict, List, Tuple
 from fastapi import FastAPI, UploadFile, File, HTTPException, status
@@ -16,6 +18,7 @@ from .schemas import (
     IngestResponse,
     DocumentHistoryItem,
     QueryRequest,
+    SessionQueryRequest,
     QueryResponse,
     Citation,
     HealthResponse,
@@ -114,9 +117,67 @@ def retrieve_top_passages(doc: IngestResponse, query_str: str) -> Tuple[int, str
 
     return best_page, best_quote
 
+def query_gemma_llm(doc: IngestResponse, query_str: str, best_page: int, best_quote: str) -> Tuple[str, bool]:
+    """
+    Queries local Ollama running Gemma to generate a plain-English explanation.
+    Returns (answer_text, model_ready).
+    """
+    page_obj = next((p for p in doc.pages if p.page_number == best_page), None)
+    context_text = page_obj.text if page_obj else best_quote
+
+    q_lower = query_str.lower()
+    is_summary_query = any(k in q_lower for k in ["about", "summary", "summarize", "overview", "what is this", "explain this"])
+    if is_summary_query and doc.pages:
+        context_text = "\n\n".join([p.text for p in doc.pages[:2]])
+
+    if len(context_text) > 3000:
+        context_text = context_text[:3000] + "..."
+
+    prompt = f"""You are Plainly, an expert AI legal assistant designed to explain contracts, agreements, and legal documents in clear, everyday English.
+Analyze the following document context and answer the user's question clearly, concisely, and objectively. Avoid unnecessary legal jargon.
+
+Document: {doc.filename}
+Context (Page {best_page}):
+\"\"\"{context_text}\"\"\"
+
+User Question: {query_str}
+
+Provide a direct, plain-English explanation in 2 to 4 sentences:"""
+
+    try:
+        data = json.dumps({
+            "model": "gemma4:e4b",
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.2,
+                "num_predict": 600,
+            }
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            "http://localhost:11434/api/generate",
+            data=data,
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=35) as res:
+            result = json.loads(res.read().decode("utf-8"))
+            answer = result.get("response", "").strip()
+            if answer:
+                return answer, True
+    except Exception as e:
+        safe_print(f"Ollama local inference fallback: {e}")
+
+    # Fallback if Ollama is unavailable
+    clean_quote = best_quote.replace("\n", " ").strip()
+    return (
+        f"Based on page {best_page} of {doc.filename}: {clean_quote}",
+        False
+    )
+
 @app.get("/api/health", response_model=HealthResponse)
 def health_check():
-    return HealthResponse(status="ok", ocr_engine="RapidOCR Ready")
+    return HealthResponse(status="ok", ocr_engine="RapidOCR Ready", model="gemma4:e4b")
 
 @app.post("/api/documents/ingest", response_model=IngestResponse)
 async def ingest_document(file: UploadFile = File(...)):
@@ -143,6 +204,9 @@ async def ingest_document(file: UploadFile = File(...)):
 
         ingest_result = parse_document(content, file.filename)
         DOCUMENTS[ingest_result.document_id] = ingest_result
+        DOCUMENTS[ingest_result.filename] = ingest_result
+        safe_title = ingest_result.filename.replace(" ", "_").lower()
+        DOCUMENTS[safe_title] = ingest_result
 
         # Update in-memory session history
         ocr_count = sum(1 for p in ingest_result.pages if p.ocr_applied)
@@ -196,12 +260,77 @@ def query_document(payload: QueryRequest):
         )
 
     best_page, best_quote = retrieve_top_passages(doc, payload.query)
+    answer, model_ready = query_gemma_llm(doc, payload.query, best_page, best_quote)
 
     return QueryResponse(
-        answer=f"Gemma model not yet loaded. Top matching passage retrieved from page {best_page}.",
+        answer=answer,
         citations=[Citation(page=best_page, quote=best_quote)],
         explicit_terms=[],
         potential_concerns=[],
         uncertainties=[],
-        model_ready=False,
+        model_ready=model_ready,
     )
+
+@app.get("/api/sessions")
+def get_sessions():
+    """Returns sessions list mapped from ingested history."""
+    return [
+        {
+            "chat_title": h.document_id,
+            "filename": h.filename,
+            "created_at": h.timestamp,
+        }
+        for h in HISTORY
+    ]
+
+@app.get("/api/sessions/{session_id}")
+def get_session_detail(session_id: str):
+    doc = DOCUMENTS.get(session_id)
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session '{session_id}' not found.",
+        )
+    page_summaries = [
+        {
+            "page": p.page_number,
+            "summary": (p.text[:220].strip() + ("..." if len(p.text) > 220 else ""))
+            if p.text
+            else f"Page {p.page_number} content ({p.char_count} chars).",
+        }
+        for p in doc.pages
+    ]
+    total_chars = sum(p.char_count for p in doc.pages)
+    return {
+        "chat_title": doc.document_id,
+        "parsed": doc,
+        "result": {
+            "chat_title": doc.document_id,
+            "document_id": doc.document_id,
+            "filename": doc.filename,
+            "created_at": datetime.now().isoformat(),
+            "document_summary": {
+                "overall_summary": f"Analyzed **{doc.filename}** ({doc.total_pages} pages, {total_chars:,} characters).",
+                "page_summaries": page_summaries,
+            },
+            "history": [],
+        },
+    }
+
+@app.post("/api/sessions/{session_id}/query")
+def query_session(session_id: str, payload: SessionQueryRequest):
+    doc = DOCUMENTS.get(session_id)
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session '{session_id}' not found.",
+        )
+    best_page, best_quote = retrieve_top_passages(doc, payload.query)
+    answer, model_ready = query_gemma_llm(doc, payload.query, best_page, best_quote)
+    return {
+        "query_id": f"q_{int(datetime.now().timestamp() * 1000)}",
+        "timestamp": datetime.now().isoformat(),
+        "question": payload.query,
+        "answer": answer,
+        "citations": [{"page": best_page, "quote": best_quote}],
+    }

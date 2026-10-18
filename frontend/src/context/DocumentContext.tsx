@@ -5,11 +5,13 @@ import type {
   DocumentHistoryItem,
   Citation,
   IngestResponse,
+  PageSummary,
 } from '../types/triage';
 import {
   ingestDocument,
   querySession,
   getSessions,
+  getDocumentsHistory,
   getSessionDetail,
   checkBackendPing,
 } from '../api/documents';
@@ -208,6 +210,39 @@ export const useDocumentContext = () => {
   return ctx;
 };
 
+function buildResultDoc(parsedDoc: ParsedDocument, chatTitle: string): ResultDocument {
+  const pageSummaries: PageSummary[] = (parsedDoc.pages || []).map((p) => {
+    const clean = (p.text || '').trim().replace(/\s+/g, ' ');
+    const snippet = clean.slice(0, 220);
+    return {
+      page: p.page_number,
+      summary: snippet
+        ? `${snippet}${clean.length > 220 ? '...' : ''}`
+        : `Page ${p.page_number} content (${p.char_count || 0} characters).`,
+    };
+  });
+
+  const totalChars = (parsedDoc.pages || []).reduce((acc, p) => acc + (p.char_count || 0), 0);
+  const ocrPages = (parsedDoc.pages || []).filter((p) => p.ocr_applied).length;
+  const ocrNote = ocrPages > 0 ? ` (${ocrPages} OCR processed)` : '';
+
+  const overallSummary = `Analyzed **${parsedDoc.filename}** (${parsedDoc.total_pages} ${
+    parsedDoc.total_pages === 1 ? 'page' : 'pages'
+  }${ocrNote}, ${totalChars.toLocaleString()} characters). Key clauses and obligations have been extracted and prepared for plain-English query triage.`;
+
+  return {
+    chat_title: chatTitle,
+    document_id: parsedDoc.document_id,
+    filename: parsedDoc.filename,
+    created_at: new Date().toISOString(),
+    document_summary: {
+      overall_summary: overallSummary,
+      page_summaries: pageSummaries,
+    },
+    history: [],
+  };
+}
+
 export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentDoc, setCurrentDoc] = useState<ParsedDocument | null>(DEFAULT_SAMPLE_DOC);
   const [currentChatTitle, setCurrentChatTitle] = useState<string>('sample-lease-2026');
@@ -236,25 +271,17 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setBackendHealth(ping);
 
       if (ping.ok) {
-        const sessions = await getSessions();
-        if (sessions && sessions.length > 0) {
-          const mapped: DocumentHistoryItem[] = sessions.map((s) => ({
-            document_id: s.chat_title,
-            chat_title: s.chat_title,
-            filename: s.filename || s.chat_title,
-            total_pages: 1,
-            digital_pages: 1,
-            ocr_pages: 0,
-            timestamp: s.created_at ? new Date(s.created_at).toLocaleDateString() : 'Saved',
-            total_chars: 0,
-          }));
-
+        const historyItems = await getDocumentsHistory();
+        if (historyItems && historyItems.length > 0) {
           setHistory((prev) => {
             const map = new Map<string, DocumentHistoryItem>();
-            mapped.forEach((item) => map.set(item.chat_title || item.document_id, item));
+            historyItems.forEach((item) => {
+              const key = item.chat_title || item.document_id;
+              if (key) map.set(key, item);
+            });
             prev.forEach((item) => {
               const key = item.chat_title || item.document_id;
-              if (!map.has(key)) map.set(key, item);
+              if (key && !map.has(key)) map.set(key, item);
             });
             return Array.from(map.values());
           });
@@ -286,13 +313,26 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         let resultDoc: ResultDocument;
 
         try {
-          // Real backend ingestion with RapidOCR & Rolling Summarization
-          const response = await ingestDocument(file);
-          chatTitle = response.chat_title;
-          parsedDoc = response.parsed;
-          resultDoc = response.result;
+          // Real backend ingestion with RapidOCR & PyMuPDF
+          const rawResponse = await ingestDocument(file);
+          const response = rawResponse as unknown as Record<string, unknown>;
+
+          if (response && response.parsed && typeof response.parsed === 'object') {
+            // Nested session format { chat_title, parsed, result }
+            parsedDoc = response.parsed as ParsedDocument;
+            chatTitle = (response.chat_title as string) || parsedDoc.document_id || file.name;
+            resultDoc = (response.result as ResultDocument) || buildResultDoc(parsedDoc, chatTitle);
+          } else if (response && (response.document_id || response.pages)) {
+            // Direct IngestResponse from FastAPI backend { document_id, filename, total_pages, pages }
+            parsedDoc = response as unknown as ParsedDocument;
+            chatTitle = parsedDoc.document_id || file.name.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+            resultDoc = buildResultDoc(parsedDoc, chatTitle);
+          } else {
+            throw new Error('Unrecognized response format from document ingestion API');
+          }
         } catch (apiErr: unknown) {
           // Graceful fallback for offline development or client-side review
+          console.warn('Backend ingestion failed or offline, using fallback:', apiErr);
           const textContent = await file.text().catch(() => '');
           const fallbackDocId = `doc-${Date.now()}`;
           chatTitle = file.name.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
@@ -311,22 +351,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               },
             ],
           };
-          resultDoc = {
-            chat_title: chatTitle,
-            document_id: fallbackDocId,
-            filename: file.name,
-            created_at: new Date().toISOString(),
-            document_summary: {
-              overall_summary: `Structured document ingestion for ${file.name}. Parsed ${parsedDoc.total_pages} page(s).`,
-              page_summaries: [
-                {
-                  page: 1,
-                  summary: `Initial page extraction containing ${parsedDoc.pages[0].char_count} characters.`,
-                },
-              ],
-            },
-            history: [],
-          };
+          resultDoc = buildResultDoc(parsedDoc, chatTitle);
         }
 
         clearInterval(timer);
@@ -345,9 +370,9 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           filename: parsedDoc.filename,
           total_pages: parsedDoc.total_pages,
           digital_pages: parsedDoc.total_pages,
-          ocr_pages: 0,
+          ocr_pages: parsedDoc.pages?.filter((p) => p.ocr_applied).length || 0,
           timestamp: 'Just now',
-          total_chars: parsedDoc.pages.reduce((acc, p) => acc + (p.char_count || 0), 0),
+          total_chars: parsedDoc.pages?.reduce((acc, p) => acc + (p.char_count || 0), 0) || 0,
         };
 
         setHistory((prev) => [
@@ -535,7 +560,8 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         let citationsList: Citation[] = [];
         let warningNote: string | undefined = undefined;
 
-        const sessionKey = currentChatTitle || currentDoc.document_id;
+        // Prefer document_id because backend indexes documents by document_id
+        const sessionKey = currentDoc.document_id || currentChatTitle;
 
         try {
           // Connect directly to backend Hybrid Search & QA API:

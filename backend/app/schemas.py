@@ -26,6 +26,9 @@ class QueryRequest(BaseModel):
     document_id: str
     query: str
 
+class SessionQueryRequest(BaseModel):
+    query: str
+
 class Citation(BaseModel):
     page: int
     quote: str
@@ -41,3 +44,4 @@ class QueryResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str = "ok"
     ocr_engine: str = "RapidOCR Ready"
+    model: str = "gemma4:e4b"

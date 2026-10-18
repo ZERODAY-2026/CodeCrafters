@@ -26,10 +26,12 @@ export function useDocument(): UseDocumentReturn {
 
     try {
       const response = await ingestDocument(selectedFile);
-      setResultData(response);
-      setIngestData(response.parsed);
+      const parsed: IngestResponse =
+        (response as IngestResultResponse).parsed || (response as IngestResponse);
+      setResultData(response as IngestResultResponse);
+      setIngestData(parsed);
       setIsUploading(false);
-      return response.parsed;
+      return parsed;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Ingest request failed';
       setUploadError(msg);
