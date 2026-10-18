@@ -1,16 +1,25 @@
-# React + Vite
+# Plainly Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Modern React 19 + TypeScript + Vite user interface for the **Plainly Legal Document Triage Agent**.
 
-Currently, two official plugins are available:
+## Features
+- **Claude-style Document Dropzone & Chat Input**: Drag-and-drop PDFs/TXT or paste text directly.
+- **Rolling Summarization View**: Interactive overview with overall synthesis and per-page breakdown.
+- **Objective Legal QA with Citation Jumps**: Verbatim quotes with direct jumps and pulsing highlights.
+- **Session Rehydration**: Instant restoration of past analyzed documents from local FastAPI storage.
+- **Adaptive Space Theme**: Fluid light and dark modes with customizable visual aesthetics.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Connecting to Backend
+The frontend connects to the backend at `http://127.0.0.1:8000` by default.  
+To point to a different URL or host, set the `VITE_API_URL` environment variable:
 
-## React Compiler
+```bash
+VITE_API_URL=http://localhost:8000 npm run dev
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Available Scripts
+- `npm run dev`: Starts Vite local development server.
+- `npm run build`: Compiles TypeScript and creates optimized production assets in `dist/`.
+- `npm run preview`: Locally previews production build.
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Refer to the root [README.md](../README.md) for complete API specifications and system architecture.

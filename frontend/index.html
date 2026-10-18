@@ -1,18 +1,25 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23D4A359' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6'/></svg>" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26' fill='none' stroke='%238FD3B6' stroke-width='1.5' stroke-linejoin='round'><path d='M6 3h10l5 5v15H6z'/><path d='M10 13h8M10 17h8'/></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0A0D12" />
-    <meta name="description" content="LexisEdge — Air-gapped Legal Intelligence & Clause Verification. Private, on-device legal document triage and forensic citation extraction." />
-    <title>LexisEdge — Air-gapped Legal Intelligence & Clause Verification</title>
-    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <meta name="theme-color" content="#04050A" />
+    <meta name="description" content="Plainly — Legal documents explained in plain English. Upload a PDF and ask anything. Plainly explains each clause in everyday language and points to the exact page." />
+    <title>Plainly — Legal documents in plain English</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <script>
+      try {
+        var __t = localStorage.getItem('plainly-theme');
+        document.documentElement.setAttribute('data-theme', __t === 'light' ? 'light' : 'dark');
+      } catch(e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    </script>
   </head>
-  <body class="bg-[#0A0D12] text-slate-200 antialiased selection:bg-[#D4A359]/25 selection:text-[#E6BC7A] min-h-screen overflow-hidden">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -1,10 +1,11 @@
 import { useState, useCallback } from 'react';
 import { ingestDocument } from '../api/documents';
-import type { IngestResponse } from '../types/triage';
+import type { IngestResponse, IngestResultResponse } from '../types/triage';
 
 export interface UseDocumentReturn {
   file: File | null;
   ingestData: IngestResponse | null;
+  resultData: IngestResultResponse | null;
   isUploading: boolean;
   uploadError: string | null;
   handleFileSelect: (file: File) => Promise<IngestResponse | null>;
@@ -14,6 +15,7 @@ export interface UseDocumentReturn {
 export function useDocument(): UseDocumentReturn {
   const [file, setFile] = useState<File | null>(null);
   const [ingestData, setIngestData] = useState<IngestResponse | null>(null);
+  const [resultData, setResultData] = useState<IngestResultResponse | null>(null);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
@@ -24,9 +26,10 @@ export function useDocument(): UseDocumentReturn {
 
     try {
       const response = await ingestDocument(selectedFile);
-      setIngestData(response);
+      setResultData(response);
+      setIngestData(response.parsed);
       setIsUploading(false);
-      return response;
+      return response.parsed;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Ingest request failed';
       setUploadError(msg);
@@ -54,6 +57,7 @@ export function useDocument(): UseDocumentReturn {
   const resetDocument = useCallback(() => {
     setFile(null);
     setIngestData(null);
+    setResultData(null);
     setIsUploading(false);
     setUploadError(null);
   }, []);
@@ -61,6 +65,7 @@ export function useDocument(): UseDocumentReturn {
   return {
     file,
     ingestData,
+    resultData,
     isUploading,
     uploadError,
     handleFileSelect,

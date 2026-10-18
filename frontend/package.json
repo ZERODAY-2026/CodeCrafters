@@ -12,10 +12,13 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.5",
+    "framer-motion": "^14.3.0",
     "lucide-react": "^1.59.0",
     "pdfjs-dist": "^6.4.299",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "react-dropzone": "^20.1.4",
+    "react-router-dom": "^7.18.4",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2"
   },
